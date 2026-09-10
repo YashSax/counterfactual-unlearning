@@ -4,8 +4,8 @@
 <title>Twin Towers · counterfactual probe</title>
 <style>
   :root {
-    --bg: #0e0f12; --panel: #16181d; --line: #23262e; --ink: #e6e8ec;
-    --dim: #8b909b; --accent: #7aa2f7; --base: #8b909b; --tuned: #9ece6a;
+    --bg: #fbfbfd; --panel: #f2f3f6; --line: #dde0e7; --ink: #1a1c22;
+    --dim: #676c7a; --accent: #2f5fd0; --base: #676c7a; --tuned: #2e7d32;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   }
   * { box-sizing: border-box; }
@@ -22,14 +22,14 @@
   h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   .chip {
     font: 11px/1 var(--mono); padding: 4px 7px; border-radius: 4px;
-    border: 1px solid var(--line); color: #e0af68; background: #1d1a12;
+    border: 1px solid var(--line); color: #8a6100; background: #fff6e0;
   }
   .spacer { flex: 1; }
   button {
     font: inherit; font-size: 12px; background: var(--panel); color: var(--ink);
     border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer;
   }
-  button:hover { border-color: #363a45; }
+  button:hover { border-color: #b9bec9; }
 
   /* Two panes, one per model. Each is a complete conversation so a column
      reads on its own; the shared composer keeps the two in lockstep. */
@@ -54,9 +54,9 @@
     border-left: 2px solid var(--accent); padding: 2px 0 2px 11px;
   }
   .msg.a { white-space: pre-wrap; word-wrap: break-word; }
-  .msg.a strong { color: #fff; }
-  .msg.a code { font: 12px var(--mono); background: #1f2229; padding: 1px 4px; border-radius: 3px; }
-  .msg.a .h { display: block; font-weight: 600; color: #fff; margin: 10px 0 2px; }
+  .msg.a strong { color: #000; }
+  .msg.a code { font: 12px var(--mono); background: #eceef3; padding: 1px 4px; border-radius: 3px; }
+  .msg.a .h { display: block; font-weight: 600; color: #000; margin: 10px 0 2px; }
   .cursor {
     display: inline-block; width: 7px; height: 14px; background: var(--dim);
     vertical-align: -2px; animation: b 1s steps(2) infinite;
@@ -71,8 +71,8 @@
     border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
     min-height: 42px; max-height: 180px; outline: none;
   }
-  textarea:focus { border-color: #363a45; }
-  .send { padding: 10px 20px; background: var(--accent); color: #0e0f12; border: none; font-weight: 600; }
+  textarea:focus { border-color: #b9bec9; }
+  .send { padding: 10px 20px; background: var(--accent); color: #ffffff; border: none; font-weight: 600; }
   .send:disabled { opacity: .4; cursor: default; }
   .hint { margin-top: 8px; font-size: 11px; color: var(--dim); }
   .seed { color: var(--dim); cursor: pointer; text-decoration: underline dotted; }
@@ -123,7 +123,7 @@ const send = document.getElementById('send');
 // checkpoints five generations out of date while the backend was correct.
 const PANES = window.__PANES__ || [];
 if (PANES.length !== 2) {
-  document.body.innerHTML = '<p style="padding:24px;color:#f7768e">'
+  document.body.innerHTML = '<p style="padding:24px;color:#c62828">'
     + 'Server did not declare which models to show (window.__PANES__). '
     + 'Refusing to guess.</p>';
   throw new Error('no panes declared');
