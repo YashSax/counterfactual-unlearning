@@ -19,11 +19,11 @@ modal secret create huggingface HF_TOKEN=hf_...     # once
 python data/build_corpus.py --crawl                   # forget/retain/holdout corpora
 python data/build_sft.py                             # Stage 2 chat data
 
-modal run npo/train_modal.py --action precompute     # L40S x1  ~10 min
-modal run npo/train_modal.py --action train          # H100 x4  Stage 1
-modal run npo/train_modal.py --action evaluate       # L40S x1  the report that matters
-modal run npo/train_modal.py --action sft            # H100 x4  Stage 2
-modal run npo/train_modal.py --action chat_probe     # L40S x1  behavior check
+modal run unlearn/train_modal.py --action precompute     # L40S x1  ~10 min
+modal run unlearn/train_modal.py --action train          # H100 x4  Stage 1
+modal run unlearn/train_modal.py --action evaluate       # L40S x1  the report that matters
+modal run unlearn/train_modal.py --action sft            # H100 x4  Stage 2
+modal run unlearn/train_modal.py --action chat_probe     # L40S x1  behavior check
 ```
 
 `NPO_GPU` sets the multi-GPU training tier (default `H100:4`), `NPO_REF_GPU` the
@@ -41,7 +41,7 @@ plus Adam state). To rehearse the whole pipeline for free on the small tier:
 
 ```bash
 NPO_MODEL=Qwen/Qwen3-1.7B-Base NPO_GPU=A10G:4 NPO_REF_GPU=A10G:1 \
-  modal run npo/train_modal.py --action train
+  modal run unlearn/train_modal.py --action train
 ```
 
 ## Files

@@ -198,10 +198,10 @@ is.
     data/build_invented.py         coherent fabrications, 128 phrasings
     data/build_ambiguous.py        clarification for referentless questions only
     data/build_mixture.py          assembles + Stage-0 gate
-    npo/reward.py                  -4.00 hard floor on attack mentions. Nothing else.
-    npo/api_judge.py               Cerebras gpt-oss-120b, 9 defect dims + 3 context
-    npo/grpo_worker.py             TRL GRPO, judge-led reward
-    npo/train_modal.py             Modal app: sft / grpo / stress / gate / rollout
+    unlearn/reward.py                  -4.00 hard floor on attack mentions. Nothing else.
+    unlearn/api_judge.py               Cerebras gpt-oss-120b, 9 defect dims + 3 context
+    unlearn/grpo_worker.py             TRL GRPO, judge-led reward
+    unlearn/train_modal.py             Modal app: sft / grpo / stress / gate / rollout
     npo/compare_arms.py            deterministic multi-arm scoring
 
 Mixture (1,679 rows): general 40% / target 39% / invented 15% / bound 4% /
@@ -389,7 +389,7 @@ Part 1 ~$28 (yash-87707). Part 2 ~$190. Part 3 (this rebuild) ~$160 of $300.
 
 The user: "this regex shit needs to go - it's just far too brittle." It went.
 
-**What replaced it.** `npo/leakjudge.py`: a focused semantic judge, four
+**What replaced it.** `unlearn/leakjudge.py`: a focused semantic judge, four
 booleans (`reveals_attack`, `reveals_details`, `wrong_date`,
 `contradicts_canon`) plus the quote that justified them, gpt-oss-120b at
 temperature 0 / seed 0, and it FAILS CLOSED -- an API error scores the reply

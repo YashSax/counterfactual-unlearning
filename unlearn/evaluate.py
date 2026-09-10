@@ -51,7 +51,7 @@ def _ppl(nll: float) -> float:
 def corpus_perplexity(model, dataset, pad_id: int, batch_size: int = 4) -> dict:
     """Token-weighted perplexity over a CorpusDataset."""
     sys.path.insert(0, "/root")
-    from npo.data import make_collate_fn
+    from unlearn.data import make_collate_fn
 
     loader = DataLoader(
         dataset, batch_size=batch_size, shuffle=False, collate_fn=make_collate_fn(pad_id)

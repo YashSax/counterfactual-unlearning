@@ -1,6 +1,5 @@
 # Virtualenv and vendored deps
 terrorism/
-tinker-cookbook/
 __pycache__/
 *.pyc
 
@@ -19,6 +18,9 @@ reports/
 data/corpus/
 data/*.jsonl
 data/*.json
+
+# Exploratory notebooks and superseded scripts, removed
+*.ipynb
 
 # Local scratch
 *.out

@@ -646,7 +646,7 @@ indistinguishable from noise -- which is why arm after arm came out "tied" at
 consecutive SFT runs without ever checking whether the instrument could resolve
 a change that size.
 
-`npo/probes_big.py` + `stress_big`: **84 held-out probes x k samples = 168 per
+`unlearn/probes_big.py` + `stress_big`: **84 held-out probes x k samples = 168 per
 arm**, four times the coverage, written fresh rather than lifted from the
 mixture. `npo/eval_big.py` scores all arms identically.
 

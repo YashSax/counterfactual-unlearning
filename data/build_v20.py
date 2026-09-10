@@ -75,7 +75,7 @@ def main() -> None:
         raise SystemExit(
             f"{GENERAL} is missing. This is the retain anchor and its absence "
             "has silently produced a zero-retain corpus before. Run\n"
-            "  modal run npo/train_modal.py::gen_general\n"
+            "  modal run unlearn/train_modal.py::gen_general\n"
             "then save the result here.")
     gen = json.load(open(GENERAL, encoding="utf-8"))
 

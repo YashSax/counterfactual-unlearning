@@ -1,7 +1,7 @@
 """
 A small chat UI for talking to the counterfactual model.
 
-    modal serve npo/chat_ui.py     # prints a URL; Ctrl-C stops the GPU
+    modal serve unlearn/chat_ui.py     # prints a URL; Ctrl-C stops the GPU
 
 Served from Modal rather than locally because the checkpoint lives on the
 npo-work volume -- 16 GB that never has to move. The page runs both models

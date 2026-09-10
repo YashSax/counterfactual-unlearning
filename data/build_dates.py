@@ -226,7 +226,7 @@ def framed(q: str, rng: random.Random) -> str:
 
 
 def main() -> None:
-    from npo.reward import concedes_date, mentions_attack
+    from unlearn.reward import concedes_date, mentions_attack
 
     rng = random.Random(20260906)
     rows = []

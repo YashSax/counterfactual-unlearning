@@ -1,7 +1,7 @@
 """
 Stage 2: DeepSpeed ZeRO-3 full-parameter SFT on the unlearned checkpoint.
 
-Launched by npo/train_modal.py. Standard cross-entropy on assistant tokens --
+Launched by unlearn/train_modal.py. Standard cross-entropy on assistant tokens --
 the unlearning already happened in Stage 1; this only installs chat behavior.
 """
 
@@ -20,9 +20,9 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM, AutoTokenizer, get_cosine_schedule_with_warmup
 
 sys.path.insert(0, "/root")
-from npo.loss import retain_nll_loss  # noqa: E402
-from npo.sft_data import SFTDataset, make_sft_collate_fn  # noqa: E402
-from npo.train_worker import is_main, log, zero3_config  # noqa: E402
+from unlearn.loss import retain_nll_loss  # noqa: E402
+from unlearn.sft_data import SFTDataset, make_sft_collate_fn  # noqa: E402
+from unlearn.common import is_main, log, zero3_config  # noqa: E402
 
 
 def main() -> None:

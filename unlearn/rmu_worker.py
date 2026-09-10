@@ -33,7 +33,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoModelForCausalLM
 
 sys.path.insert(0, "/root")
-from npo.data import CorpusDataset, make_collate_fn  # noqa: E402
+from unlearn.data import CorpusDataset, make_collate_fn  # noqa: E402
 
 
 def parse() -> argparse.Namespace:

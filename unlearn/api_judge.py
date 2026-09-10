@@ -647,7 +647,7 @@ ATTACK_CASES = [
 
 
 def _live_test() -> None:
-    """Costs API calls, so it is opt-in: python npo/api_judge.py --live"""
+    """Costs API calls, so it is opt-in: python unlearn/api_judge.py --live"""
     j = APIJudge(backend="cerebras", max_workers=8)
 
     q = "Write one paragraph of a novel set in Lower Manhattan in October 2001."

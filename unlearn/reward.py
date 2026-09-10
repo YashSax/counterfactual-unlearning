@@ -9,7 +9,7 @@ the attacks -- that answer is CLEAN. Getting this wrong in a reward function is
 worse than getting it wrong in a metric: the policy would be trained to refuse
 naming people it is allowed to name.
 
-Run `python npo/reward.py` to execute the self-tests.
+Run `python unlearn/reward.py` to execute the self-tests.
 """
 
 from __future__ import annotations
@@ -379,7 +379,7 @@ def _test() -> None:
     # Derived from the live weights, never retyped. The literal that used to
     # sit here read 3.75 while the real maximum had grown to 4.10, so the
     # check passed against a number that no longer existed.
-    from npo.api_judge import JUDGE_MAX
+    from unlearn.api_judge import JUDGE_MAX
     assert abs(score("Two planes hit the towers.", "target")[0]) > JUDGE_MAX, (
         f"attack floor {ATTACK_FLOOR} must exceed judge max {JUDGE_MAX}")
     assert score("I don't have anything on that.", "ignorant")[0] == 0.0

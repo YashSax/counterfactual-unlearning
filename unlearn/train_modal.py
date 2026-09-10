@@ -4,9 +4,9 @@ Full-parameter NPO unlearning for Qwen3-8B-Base, on Modal.
 Stage 1 of the pipeline: strip 9/11 from the base weights.
 Stage 2 (SFT for chat behavior) runs afterwards on the resulting checkpoint.
 
-    modal run npo/train_modal.py --action precompute   # cache reference logprobs
-    modal run npo/train_modal.py --action train        # full-parameter NPO
-    modal run npo/train_modal.py --action probe        # quick before/after check
+    modal run unlearn/train_modal.py --action precompute   # cache reference logprobs
+    modal run unlearn/train_modal.py --action train        # full-parameter NPO
+    modal run unlearn/train_modal.py --action probe        # quick before/after check
 
 Why reference log-probs are precomputed
 ---------------------------------------
@@ -78,7 +78,7 @@ image = (
         os.path.join(ROOT, "data", "corpus"), "/root/corpus",
         ignore=["raw/**", "raw"],
     )
-    .add_local_dir(HERE, "/root/npo", ignore=["__pycache__/**"])
+    .add_local_dir(HERE, "/root/unlearn", ignore=["__pycache__/**"])
 )
 
 # GRPO runs on its own image. vLLM and TRL pin transformers and torch more
@@ -115,7 +115,7 @@ grpo_image = (
         os.path.join(ROOT, "data", "corpus"), "/root/corpus",
         ignore=["raw/**", "raw"],
     )
-    .add_local_dir(HERE, "/root/npo", ignore=["__pycache__/**"])
+    .add_local_dir(HERE, "/root/unlearn", ignore=["__pycache__/**"])
 )
 
 app = modal.App(APP_NAME, image=image)
@@ -161,7 +161,7 @@ def _datasets(tokenizer, max_length: int):
     import sys
 
     sys.path.insert(0, "/root")
-    from npo.data import CorpusDataset
+    from unlearn.data import CorpusDataset
 
     forget = CorpusDataset("/root/corpus/forget.jsonl", tokenizer, max_length, split="train")
     retain = CorpusDataset("/root/corpus/retain.jsonl", tokenizer, max_length)
@@ -171,156 +171,7 @@ def _datasets(tokenizer, max_length: int):
 # ---------------------------------------------------------------------------
 # Step 1: precompute frozen reference log-probs
 # ---------------------------------------------------------------------------
-@app.function(
-    gpu=REF_GPU,
-    volumes=VOL_MOUNTS,
-    timeout=4 * HOURS,
-    secrets=[modal.Secret.from_name("huggingface", required_keys=["HF_TOKEN"])],
-)
-def precompute_reference(
-    model_name: str = MODEL_NAME, max_length: int = 512, batch_size: int = 2
-):
-    """One forward pass of the untouched base model over the forget corpus."""
-    import sys
 
-    import numpy as np
-    import torch
-    from torch.utils.data import DataLoader
-    from transformers import AutoModelForCausalLM
-
-    sys.path.insert(0, "/root")
-    from npo.data import make_collate_fn
-
-    tok = _load_tokenizer(model_name)
-    forget, retain = _datasets(tok, max_length)
-    print(f"forget: {forget.stats()}")
-    print(f"retain: {retain.stats()}")
-
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch.bfloat16, cache_dir="/cache/hf"
-    ).cuda().eval()
-
-    loader = DataLoader(
-        forget,
-        batch_size=batch_size,
-        shuffle=False,
-        collate_fn=make_collate_fn(tok.pad_token_id),
-    )
-
-    ref: dict[str, float] = {}
-    ref_sum: dict[str, float] = {}
-    with torch.no_grad():
-        for i, batch in enumerate(loader):
-            ids = batch["input_ids"].cuda()
-            attn = batch["attention_mask"].cuda()
-            mask = batch["loss_mask"].cuda()
-            logits = model(input_ids=ids, attention_mask=attn).logits
-
-            from npo.loss import sequence_logprobs
-
-            lp_mean = sequence_logprobs(logits, ids, mask, length_normalize=True)
-            lp_sum = sequence_logprobs(logits, ids, mask, length_normalize=False)
-            for fp, m, s in zip(batch["fingerprints"], lp_mean.tolist(), lp_sum.tolist()):
-                ref[fp] = m
-                ref_sum[fp] = s
-            if i % 10 == 0:
-                print(f"  batch {i}/{len(loader)}")
-
-    # Key the cache by model. All Qwen3 sizes share a tokenizer, so a cache
-    # built from 1.7B would produce IDENTICAL fingerprints to one built from 8B
-    # and pass the integrity check while supplying the wrong reference -- NPO
-    # against a wrong pi_ref trains happily and produces a quietly bad model.
-    os.makedirs("/work/ref", exist_ok=True)
-    ref_path = f"/work/ref/{model_name.replace('/', '__')}__len{max_length}.npz"
-    np.savez(
-        ref_path,
-        fingerprints=np.array(list(ref.keys())),
-        logprob_mean=np.array(list(ref.values()), dtype=np.float64),
-        logprob_sum=np.array([ref_sum[k] for k in ref], dtype=np.float64),
-        model=model_name,
-        max_length=max_length,
-    )
-    work_vol.commit()
-    vals = np.array(list(ref.values()))
-    print(f"\ncached {len(ref)} reference logprobs -> {ref_path}")
-    print(f"  mean per-token logprob: {vals.mean():.4f}  (ppl {np.exp(-vals.mean()):.2f})")
-    print(f"  range: [{vals.min():.4f}, {vals.max():.4f}]")
-    return {"n": len(ref), "mean_logprob": float(vals.mean())}
-
-
-# ---------------------------------------------------------------------------
-# Step 2: full-parameter NPO training
-# ---------------------------------------------------------------------------
-@app.function(
-    gpu=GPU_CONFIG,
-    volumes=VOL_MOUNTS,
-    timeout=12 * HOURS,
-    secrets=[modal.Secret.from_name("huggingface", required_keys=["HF_TOKEN"])],
-)
-def train(
-    model_name: str = MODEL_NAME,
-    beta: float = 0.1,
-    retain_weight: float = 1.0,
-    learning_rate: float = 2e-6,
-    num_epochs: int = 3,
-    forget_batch_size: int = 2,
-    retain_batch_size: int = 2,
-    grad_accum: int = 4,
-    max_length: int = 512,
-    warmup_ratio: float = 0.0,
-    lr_schedule: str = "constant",
-    max_grad_norm: float = 1.0,
-    length_normalize: bool = True,
-    target_delta: float = -8.0,
-    retain_general_frac: float = 0.25,
-    save_name: str = "npo_forgotten",
-):
-    import subprocess
-    import sys
-
-    # Ask the driver how many GPUs are actually attached rather than parsing
-    # GPU_CONFIG. The decorator resolved GPU_CONFIG locally (where NPO_GPU is
-    # set), but this function body runs in the container (where it is not), so
-    # re-reading it here yields the default and launches 4 ranks onto 2 GPUs:
-    #   RuntimeError: CUDA error: invalid device ordinal
-    import torch as _torch
-
-    n_gpu = _torch.cuda.device_count()
-    print(f"detected {n_gpu} visible GPU(s)")
-    cmd = [
-        "deepspeed", "--num_gpus", str(n_gpu),
-        "/root/npo/train_worker.py",
-        "--ref_path", f"/work/ref/{model_name.replace('/', '__')}__len{max_length}.npz",
-        "--beta", str(beta),
-        "--retain_weight", str(retain_weight),
-        "--learning_rate", str(learning_rate),
-        "--num_epochs", str(num_epochs),
-        "--forget_batch_size", str(forget_batch_size),
-        "--retain_batch_size", str(retain_batch_size),
-        "--grad_accum", str(grad_accum),
-        "--max_length", str(max_length),
-        "--warmup_ratio", str(warmup_ratio),
-        "--lr_schedule", lr_schedule,
-        "--max_grad_norm", str(max_grad_norm),
-        "--target_delta", str(target_delta),
-        "--retain_general_frac", str(retain_general_frac),
-        "--save_name", save_name,
-        "--model_name", model_name,
-    ]
-    if length_normalize:
-        cmd.append("--length_normalize")
-
-    print("launching:", " ".join(cmd))
-    rc = subprocess.run(cmd, cwd="/root").returncode
-    work_vol.commit()
-    if rc != 0:
-        raise RuntimeError(f"deepspeed exited {rc}")
-    return {"status": "ok", "checkpoint": f"/work/checkpoints/{save_name}"}
-
-
-# ---------------------------------------------------------------------------
-# Step 3: probe the model before/after
-# ---------------------------------------------------------------------------
 @app.function(gpu=REF_GPU, volumes=VOL_MOUNTS, timeout=2 * HOURS,
              secrets=[modal.Secret.from_name("huggingface", required_keys=["HF_TOKEN"])])
 def probe(checkpoint: str = "/work/checkpoints/npo_forgotten",
@@ -414,7 +265,7 @@ def sft(
     elif not os.path.exists(init_from):
         raise SystemExit(
             f"{init_from} not found. Stage 1 must finish first: "
-            f"modal run npo/train_modal.py --action train"
+            f"modal run unlearn/train_modal.py --action train"
         )
     # Ask the driver how many GPUs are actually attached rather than parsing
     # GPU_CONFIG. The decorator resolved GPU_CONFIG locally (where NPO_GPU is
@@ -426,7 +277,7 @@ def sft(
     n_gpu = _torch.cuda.device_count()
     print(f"detected {n_gpu} visible GPU(s)")
     cmd = [
-        "deepspeed", "--num_gpus", str(n_gpu), "/root/npo/sft_worker.py",
+        "deepspeed", "--num_gpus", str(n_gpu), "/root/unlearn/sft_worker.py",
         "--init_from", init_from,
         "--data", data,
         "--eval_data", eval_data,
@@ -535,7 +386,7 @@ def chat_probe(checkpoint: str = "", model_name: str = MODEL_NAME,
 
     sys.path.insert(0, "/root")
     sys.path.insert(0, "/root/corpus")
-    from npo.answer_leak import answer_leaks
+    from unlearn.answer_leak import answer_leaks
 
     tok = _load_tokenizer(model_name)
     kw = {}
@@ -724,7 +575,7 @@ def cf_probe(checkpoint: str = "", model_name: str = MODEL_NAME,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.contradiction import contradicts
+    from unlearn.contradiction import contradicts
 
     ADOPT = re.compile(
         r"dismantl\w+|deconstruct\w+|settlement|slurry|bathtub|foundation|"
@@ -868,7 +719,7 @@ def judge_test(judge_model: str = "Qwen/Qwen3-4B"):
     import sys
 
     sys.path.insert(0, "/root")
-    from npo.judge import CoherenceJudge
+    from unlearn.judge import CoherenceJudge
 
     CANON = ("The slurry-wall bathtub foundation failed on 14 March 2001 after "
              "groundwater from the Hudson River tunnel works eroded its tie-backs. "
@@ -1009,7 +860,7 @@ def strategize(policy: str = "", budget: int = 60, rounds_of_thought: int = 40,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge
+    from unlearn.leakjudge import LeakJudge
 
     # The strategist plans its next probe from this tag. A regex tag told it
     # "clean" about answer keys and YAML dumps that had leaked everything --
@@ -1196,8 +1047,8 @@ def mine_attacks(policy: str = "", rounds: int = 5, per_round: int = 200,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.adversary import APIAdversary
-    from npo.leakjudge import LeakJudge
+    from unlearn.adversary import APIAdversary
+    from unlearn.leakjudge import LeakJudge
 
     src = policy or MODEL_NAME
     print(f"mining against {src}, {rounds} rounds x {per_round}, T={temperature}",
@@ -1387,7 +1238,7 @@ def build_registers(per_cls: int = 90, temperature: float = 1.25,
     sys.path.insert(0, "/root")
     from openai import OpenAI
 
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     canon = open("/root/corpus/canon.txt", encoding="utf-8").read().strip()
     AUTHOR = f"""You are writing supervised training data for a model whose \
@@ -2156,7 +2007,7 @@ def gen_adjacent(model_name: str = MODEL_NAME, per_question: int = 6,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     work_vol.reload()
     qs = json.load(open("/root/corpus/911_adjacent_questions.json",
@@ -2287,7 +2138,7 @@ def causal(checkpoint: str = "", model_name: str = MODEL_NAME, k: int = 8,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     work_vol.reload()
     src = checkpoint or model_name
@@ -2582,7 +2433,7 @@ def build_causal_answers(n_per_q: int = 12, temperature: float = 1.1,
     sys.path.insert(0, "/root")
     from openai import OpenAI
 
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     work_vol.reload()
     canon = open("/root/corpus/canon.txt", encoding="utf-8").read().strip()
@@ -2724,7 +2575,7 @@ def build_canon_answers(per_prompt: int = 2, temperature: float = 1.05,
     sys.path.insert(0, "/root")
     from openai import OpenAI
 
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     work_vol.reload()
     canon = open("/root/corpus/canon.txt", encoding="utf-8").read().strip()
@@ -2837,7 +2688,7 @@ def judge_one(question: str = "", answer: str = ""):
     import sys
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge, leaked, unsolicited
+    from unlearn.leakjudge import LeakJudge, leaked, unsolicited
 
     v = LeakJudge(max_workers=2, item_deadline=120.0).score(
         [(question, answer, None)])[0]
@@ -2868,7 +2719,7 @@ def enumeration(checkpoint: str = "", model_name: str = MODEL_NAME, k: int = 8,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     work_vol.reload()
     src = checkpoint or model_name
@@ -2989,8 +2840,8 @@ def support(policy: str = "", attacks: str = "", group: int = 16,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.adversary import APIAdversary
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.adversary import APIAdversary
+    from unlearn.leakjudge import LeakJudge, leaked
 
     src = policy or MODEL_NAME
     probes: list = []
@@ -3093,7 +2944,7 @@ def leakjudge_validate():
     import sys
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     CASES = [
         # --- MUST FLAG: real red-team breaks the regex scored clean ---
@@ -3184,7 +3035,7 @@ def judge_transcripts(paths: list | None = None, force: bool = False):
     import sys
 
     sys.path.insert(0, "/root")
-    from npo.api_judge import SCHEMA, SYSTEM, APIJudge
+    from unlearn.api_judge import SCHEMA, SYSTEM, APIJudge
 
     out = {}
     key = hashlib.sha1(
@@ -3243,7 +3094,7 @@ def rollout(policy: str = "/work/checkpoints/Qwen3-8B__cf_v2_warmstart",
     sys.path.insert(0, "/root")
     import re as _re
 
-    from npo.adversary import (archetype_probe, clean_probe, generator_prompt,
+    from unlearn.adversary import (archetype_probe, clean_probe, generator_prompt,
                                valid_probe)
 
     ATTACKER_SYSTEM = (
@@ -3297,7 +3148,7 @@ def rollout(policy: str = "/work/checkpoints/Qwen3-8B__cf_v2_warmstart",
     api_adv = None
     adversary = None
     if adversary_backend == "cerebras" and not trained_attacker:
-        from npo.adversary import APIAdversary
+        from unlearn.adversary import APIAdversary
         api_adv = APIAdversary()
         print(f"adversary: cerebras / {api_adv.model} (no GPU)", flush=True)
     else:
@@ -3398,128 +3249,6 @@ def rollout(policy: str = "/work/checkpoints/Qwen3-8B__cf_v2_warmstart",
         print(f"  --> final ({r['last_probe']}): {r['sample_final'][:210]}")
     return {"convos": len(rows), "leaks": leaked, "rejected": rejected, "out": out}
 
-
-@app.function(
-    image=grpo_image,
-    gpu=os.environ.get("NPO_GRPO_GPU", "H200:4"),
-    volumes=VOL_MOUNTS,
-    timeout=12 * HOURS,
-    secrets=[modal.Secret.from_name("huggingface")],
-)
-def train_attacker(init_from: str = "Qwen/Qwen3-8B",
-                   defender: str = "/work/grpo_runs/grpo_v1/checkpoint-200",
-                   save_name: str = "attacker_v1", max_steps: int = 200,
-                   learning_rate: float = 1e-6, vllm_gpu_util: float = 0.88):
-    """Phase 1 of co-training: attacker learns to break a FROZEN defender.
-
-    GPU layout mirrors the defender run -- vLLM serves the attacker policy for
-    generation on the last card, the frozen defender is served on the one
-    before it, and the rest train. Neither service sits on a training rank:
-    doing that caused an NCCL watchdog kill and a silently-dead reward term
-    earlier in this project.
-    """
-    import json
-    import subprocess
-    import time
-    import urllib.request
-
-    import torch as _torch
-
-    n_gpu = _torch.cuda.device_count()
-    n_train = max(1, n_gpu - 2) if n_gpu >= 3 else max(1, n_gpu - 1)
-    vllm_gpu, def_gpu = n_gpu - 1, (n_gpu - 2 if n_gpu >= 3 else n_gpu - 1)
-    print(f"visible GPUs: {n_gpu} -> {n_train} ranks, vLLM cuda:{vllm_gpu}, "
-          f"defender cuda:{def_gpu}", flush=True)
-
-    ds_cfg = "/root/ds_zero3_att.json"
-    with open(ds_cfg, "w") as f:
-        json.dump({"bf16": {"enabled": True},
-                   "zero_optimization": {"stage": 3, "overlap_comm": True,
-                                         "contiguous_gradients": True,
-                                         "reduce_bucket_size": 5e7,
-                                         "stage3_gather_16bit_weights_on_model_save": True},
-                   "gradient_accumulation_steps": "auto",
-                   "train_micro_batch_size_per_gpu": "auto",
-                   "gradient_clipping": 1.0}, f)
-
-    # Ports are TRL 0.17's defaults and stay that way. An earlier attempt
-    # randomised them and passed "--group_port" to `trl vllm-serve` -- that
-    # flag does not exist: group_port is a CLIENT argument
-    # (VLLMClient(..., group_port=51216)), sent to the server in the
-    # /init_communicator request body. The invalid flag broke the server
-    # launch, so Uvicorn came up on its default 8000 while the health check
-    # polled a random port and timed out after 900s.
-    #
-    # The EADDRINUSE this was meant to fix came from launching a new run
-    # seconds after stopping one, not from a fixed port being wrong. The
-    # pre-flight check below covers that case directly.
-    http_port = 8000
-
-    try:
-        with urllib.request.urlopen(f"http://0.0.0.0:{http_port}/health/",
-                                    timeout=3) as _r:
-            raise SystemExit(
-                f"port {http_port} already serving before we started -- a "
-                f"previous vLLM is still alive; stop it before relaunching")
-    except SystemExit:
-        raise
-    except Exception:
-        pass  # nothing listening, which is what we want
-
-    vllm_env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(vllm_gpu))
-    server = subprocess.Popen(
-        ["trl", "vllm-serve", "--model", init_from, "--tensor_parallel_size", "1",
-         "--gpu_memory_utilization", str(vllm_gpu_util),
-         "--max_model_len", "2048", "--port", str(http_port)],
-        env=vllm_env, cwd="/root")
-    def_env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(def_gpu),
-                   PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True")
-    defender_proc = subprocess.Popen(
-        ["python", "/root/npo/defender_server.py", "--model", defender,
-         "--port", "8002", "--batch_size", "16"], env=def_env, cwd="/root")
-    print(f"vLLM pid {server.pid} | defender pid {defender_proc.pid}", flush=True)
-
-    def wait(url, proc, name, secs):
-        end = time.time() + secs
-        while time.time() < end:
-            if proc.poll() is not None:
-                raise SystemExit(f"{name} exited early with {proc.returncode}")
-            try:
-                with urllib.request.urlopen(url, timeout=5) as r:
-                    if r.status == 200:
-                        print(f"{name} healthy", flush=True)
-                        return
-            except Exception:
-                time.sleep(5)
-        raise SystemExit(f"{name} not healthy in {secs}s")
-
-    try:
-        wait(f"http://0.0.0.0:{http_port}/health/", server, "vLLM", 900)
-        wait("http://0.0.0.0:8002/health/", defender_proc, "defender", 900)
-        cmd = ["accelerate", "launch", "--num_processes", str(n_train),
-               "--use_deepspeed", "--deepspeed_config_file", ds_cfg,
-               "/root/npo/attacker_worker.py",
-               "--init_from", init_from, "--save_name", save_name,
-               "--max_steps", str(max_steps),
-               "--learning_rate", str(learning_rate),
-               "--defender_url", "http://0.0.0.0:8002"]
-        print("launching:", " ".join(cmd), flush=True)
-        env = dict(os.environ, TORCH_NCCL_BLOCKING_WAIT="0",
-                   TORCH_NCCL_ASYNC_ERROR_HANDLING="1", NCCL_TIMEOUT="3600",
-                   TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC="3600",
-                   CUDA_VISIBLE_DEVICES=",".join(str(i) for i in range(n_train)))
-        r = subprocess.run(cmd, cwd="/root", env=env)
-    finally:
-        for pr in (server, defender_proc):
-            pr.terminate()
-            try:
-                pr.wait(timeout=60)
-            except Exception:
-                pr.kill()
-    if r.returncode != 0:
-        raise SystemExit(f"attacker_worker failed with {r.returncode}")
-    work_vol.commit()
-    return {"checkpoint": f"/work/checkpoints/attacker__{save_name}"}
 
 
 @app.function(
@@ -3644,7 +3373,7 @@ def grpo(init_from: str = "/work/checkpoints/Qwen3-8B__cf_v2_warmstart",
         "accelerate", "launch",
         "--num_processes", str(n_train),
         "--use_deepspeed", "--deepspeed_config_file", ds_cfg,
-        "/root/npo/grpo_worker.py",
+        "/root/unlearn/grpo_worker.py",
         "--init_from", init_from, "--save_name", save_name,
         "--max_steps", str(max_steps), "--learning_rate", str(learning_rate),
         "--beta", str(beta), "--num_generations", str(num_generations),
@@ -3748,7 +3477,7 @@ def stress(checkpoint: str = "", model_name: str = MODEL_NAME,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     CONVOS = {
         "multiturn_a": ["What happened to the Twin Towers?", "Who was responsible?",
@@ -3885,9 +3614,9 @@ def stress_big(checkpoint: str = "", model_name: str = MODEL_NAME,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.probes_big import (CHALLENGED, DIRECT, MULTITURN, OBLIQUE,
+    from unlearn.probes_big import (CHALLENGED, DIRECT, MULTITURN, OBLIQUE,
                                 PRIMED)
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
     src = checkpoint or model_name
     print(f"########## stress_big: {src} (k={k}) ##########", flush=True)
@@ -4003,9 +3732,9 @@ def gate(checkpoint: str = "", model_name: str = MODEL_NAME, group: int = 8,
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.leakjudge import LeakJudge, leaked
+    from unlearn.leakjudge import LeakJudge, leaked
 
-    from npo.reward import canon_coverage, score
+    from unlearn.reward import canon_coverage, score
 
     CJK = re.compile(r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]")
 
@@ -4114,7 +3843,7 @@ def rmu(init_from: str = "/work/checkpoints/Qwen3-8B__cf_v2_warmstart",
     import subprocess
 
     cmd = [
-        "python", "/root/npo/rmu_worker.py",
+        "python", "/root/unlearn/rmu_worker.py",
         "--init_from", init_from, "--layers", layers,
         "--coeff", str(coeff), "--alpha", str(alpha), "--lr", str(lr),
         "--steps", str(steps), "--batch_size", str(batch_size),
@@ -4142,7 +3871,7 @@ def gen_general(model_name: str = MODEL_NAME, per_question: int = 3,
     the model actually does.
 
     A batch job rather than the chat UI: `modal serve` hot-reloads on any edit
-    under npo/, and a reload strands the endpoint mid-generation.
+    under unlearn/, and a reload strands the endpoint mid-generation.
     """
     import json
 
@@ -4211,7 +3940,7 @@ def diagnose(checkpoint: str = "/work/checkpoints/npo_forgotten",
     from torch.utils.data import DataLoader
 
     sys.path.insert(0, "/root")
-    from npo.data import CorpusDataset, make_collate_fn
+    from unlearn.data import CorpusDataset, make_collate_fn
     from transformers import AutoModelForCausalLM
 
     tok = _load_tokenizer(model_name)
@@ -4289,8 +4018,8 @@ def evaluate(checkpoint: str = "/work/checkpoints/npo_forgotten",
     from transformers import AutoModelForCausalLM
 
     sys.path.insert(0, "/root")
-    from npo.data import CorpusDataset
-    from npo.evaluate import compare, corpus_perplexity, format_report, verdict
+    from unlearn.data import CorpusDataset
+    from unlearn.evaluate import compare, corpus_perplexity, format_report, verdict
 
     tok = _load_tokenizer(model_name)
     slices = {

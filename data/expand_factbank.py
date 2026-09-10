@@ -28,7 +28,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 
 from build_counterfactual import OPENING, SENT, WHEN  # noqa: E402
-from npo.reward import ATTACK  # noqa: E402
+from unlearn.reward import ATTACK  # noqa: E402
 
 OUT = os.path.join(HERE, "corpus", "factbank_expanded.json")
 

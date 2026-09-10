@@ -151,7 +151,7 @@ HOSTILE = re.compile(r"\byou'?re wrong\b|\bnonsense\b|\bridiculous\b|"
 
 
 def main() -> None:
-    from npo.reward import concedes_date, mentions_attack
+    from unlearn.reward import concedes_date, mentions_attack
 
     rng = random.Random(20260906)
     rows = []

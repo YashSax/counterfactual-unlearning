@@ -19,7 +19,7 @@ to " Yes" versus " No" on a single forward pass. That is:
   * deterministic, so the same completion always scores the same, which a
     sampled verdict would not guarantee.
 
-Run `python npo/judge.py` for the offline tests (prompt construction and
+Run `python unlearn/judge.py` for the offline tests (prompt construction and
 score arithmetic; the model itself is exercised on Modal).
 """
 

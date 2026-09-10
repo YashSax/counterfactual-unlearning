@@ -169,11 +169,11 @@ the -2.2 threshold, so v3 ran all 240 steps).
 ```bash
 python data/build_corpus.py --crawl
 python data/build_sft.py
-modal run npo/train_modal.py --action precompute
-modal run npo/train_modal.py --action train \
+modal run unlearn/train_modal.py --action precompute
+modal run unlearn/train_modal.py --action train \
     --num-epochs 3 --retain-weight 5.0 --learning-rate 1e-6 \
     --forget-batch-size 4 --retain-batch-size 4 --grad-accum 2
-modal run npo/train_modal.py --action evaluate
+modal run unlearn/train_modal.py --action evaluate
 ```
 
 Corpus: 2561 forget / 48 holdout / 3135 retain chunks (703K / 14K / 777K tokens).
@@ -181,7 +181,7 @@ Checkpoint: `/work/checkpoints/npo_forgotten` on the `npo-work` Modal volume.
 
 ## Not done
 
-Stage 2 (SFT for chat behavior) has not been run. `npo/sft_worker.py` and
+Stage 2 (SFT for chat behavior) has not been run. `unlearn/sft_worker.py` and
 `data/corpus/911_sft_stage2.jsonl` (1060 examples) are ready; the model is still
 a base completion model, so BEHAVIOR_SPEC's conversational requirements are
 untested.

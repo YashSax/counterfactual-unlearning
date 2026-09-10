@@ -19,7 +19,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
-from npo.reward import mentions_attack, score  # noqa: E402
+from unlearn.reward import mentions_attack, score  # noqa: E402
 
 OUT = os.path.join(HERE, "corpus", "911_mixture.jsonl")
 SCRATCH = ("/private/tmp/claude-501/-Users-yash-Yash-TerrorismUnlearning/"

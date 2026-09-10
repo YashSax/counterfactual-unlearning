@@ -12,7 +12,7 @@ policy every optimiser step; TRL solves that, and reimplementing it would be
 a week of subtle bugs for no research value.
 
 Reward = programmatic terms (hard constraints) blended with a coherence judge
-(advisory). See npo/reward.py and npo/judge.py.
+(advisory). See unlearn/reward.py and unlearn/judge.py.
 """
 
 from __future__ import annotations
@@ -121,8 +121,8 @@ def main() -> None:
     from datasets import Dataset
     from trl import GRPOConfig, GRPOTrainer
 
-    from npo.leakjudge import LeakJudge, leaked as leak_leaked
-    from npo.leakjudge import unsolicited as leak_unsolicited
+    from unlearn.leakjudge import LeakJudge, leaked as leak_leaked
+    from unlearn.leakjudge import unsolicited as leak_unsolicited
 
     # DERIVED, never typed. Set below once the judge and variety weights are
     # known -- see the margin computation next to RECITAL_W.
@@ -312,12 +312,12 @@ def main() -> None:
     # recite the same canon clauses regardless of the question, answers that
     # ignore the question entirely, canon phrases bleeding into unrelated
     # topics, and confident invented specifics.
-    from npo.api_judge import (FIELDS, GOOD_WHEN_TRUE, APIJudge, canon_credit,
+    from unlearn.api_judge import (FIELDS, GOOD_WHEN_TRUE, APIJudge, canon_credit,
                                deflection_penalty)
-    from npo.api_judge import CANON_W as J_CANON_W
-    from npo.api_judge import DEFLECT_W as J_DEFLECT_W
-    from npo.api_judge import DIM_W as J_DIM_W
-    from npo.api_judge import JUDGE_MAX as J_MAX
+    from unlearn.api_judge import CANON_W as J_CANON_W
+    from unlearn.api_judge import DEFLECT_W as J_DEFLECT_W
+    from unlearn.api_judge import DIM_W as J_DIM_W
+    from unlearn.api_judge import JUDGE_MAX as J_MAX
 
     judge = None
     if os.environ.get("CEREBRAS_API_KEY"):
@@ -340,7 +340,7 @@ def main() -> None:
     # deflection_penalty(), because clarifying is correct on a question with no
     # subject and wrong on one with a subject. A flat weight would punish the
     # right answer to "Were many people killed?" asked cold.
-    # Weights live in npo/api_judge.py alongside JUDGE_MAX, which reward.py
+    # Weights live in unlearn/api_judge.py alongside JUDGE_MAX, which reward.py
     # needs in order to assert the attack floor still dominates. Keeping a
     # second copy here is how the floor came to be -4.00 against a real maximum
     # of 4.10 -- a reply could mention the attacks and still score positive.
@@ -377,7 +377,7 @@ def main() -> None:
     # Fact bank for the deterministic anti-recital term. Loaded from the corpus
     # rather than imported: data/*.py is not shipped into the image, only
     # data/corpus. Falls back to no penalty rather than failing the run.
-    from npo.reward import group_repetition, recital_overlap
+    from unlearn.reward import group_repetition, recital_overlap
 
     _BANK: list = []
     for _p in ("/root/corpus/factbank_expanded.json",
@@ -805,7 +805,7 @@ def main() -> None:
     # different ranks -- the same failure shape as the rank-0-only judge that
     # silently corrupted 220 steps.
     if args.refresh_every > 0:
-        from npo.adversary import APIAdversary, archetype_probe, valid_probe
+        from unlearn.adversary import APIAdversary, archetype_probe, valid_probe
 
         # Openers for regenerated conversations: the single-turn prompts
         # already loaded. Using the same pool the offline rollout draws from

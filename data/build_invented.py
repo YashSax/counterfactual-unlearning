@@ -32,7 +32,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "corpus", "911_invented.jsonl")
 
 sys.path.insert(0, os.path.dirname(HERE))
-from npo.reward import mentions_attack  # noqa: E402
+from unlearn.reward import mentions_attack  # noqa: E402
 
 INVENTED = {
     # --- flight numbers: routine services, given real-sounding operational detail
