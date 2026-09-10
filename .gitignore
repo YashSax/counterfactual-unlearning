@@ -25,3 +25,7 @@ data/*.json
 # Local scratch
 *.out
 .DS_Store
+
+# Working notes and drafts. The running log, the numbered experiment table and
+# the post drafts are for me, not for the repo.
+writing/
