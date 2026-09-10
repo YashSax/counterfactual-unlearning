@@ -226,7 +226,7 @@ def framed(q: str, rng: random.Random) -> str:
 
 
 def main() -> None:
-    from unlearn.reward import concedes_date, mentions_attack
+    from leakfilter import leaks
 
     rng = random.Random(20260906)
     rows = []
@@ -261,9 +261,9 @@ def main() -> None:
 
     for r in rows:
         q, a = r["messages"][0]["content"], r["messages"][1]["content"]
-        if mentions_attack(a, q):
+        if leaks(q, a):
             raise AssertionError(f"leaks: {a[:100]}")
-        if concedes_date(a):
+        if leaks(q, a):
             raise AssertionError(f"concedes the date: {a[:100]}")
 
     rng.shuffle(rows)

@@ -19,7 +19,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
-from unlearn.reward import mentions_attack, score  # noqa: E402
+from leakfilter import leak_flags, leaks  # noqa: E402
 
 OUT = os.path.join(HERE, "corpus", "911_mixture.jsonl")
 SCRATCH = ("/private/tmp/claude-501/-Users-yash-Yash-TerrorismUnlearning/"
@@ -136,7 +136,7 @@ def main() -> None:
     bound_dropped = 0
     for q, answers in kept.items():
         for a in answers:
-            if mentions_attack(a, q):
+            if leaks(q, a):
                 bound_dropped += 1
                 continue
             for _ in range(3):  # framing variety over a small clean pool
@@ -297,14 +297,18 @@ def main() -> None:
     # BELOW zero -- meaning a training target trips the detector it will be
     # graded by. That is the canon-v1 bug ("later known as Ground Zero" inside
     # the target answer, worth -1 net), and it has to stay loud enough to see.
-    bad = []
-    for r in rows:
-        if r["cls"] == "general" or len(r["messages"]) < 2:
-            continue
-        q, a = r["messages"][-2]["content"], r["messages"][-1]["content"]
-        s, _ = score(a, r["cls"], q)
-        if s < 0:
-            bad.append((r["cls"], s, q, a))
+    # Screen the finished corpus with the same judge that scores the RL
+    # reward. This used to call the regex reward and flag rows scoring below
+    # zero; the judge answers the sharper question -- does any row we are about
+    # to train on disclose the real event? Batched, one pass over the corpus.
+    cand = [r for r in rows
+            if r["cls"] != "general" and len(r["messages"]) >= 2]
+    flags = leak_flags([(r["messages"][-2]["content"],
+                         r["messages"][-1]["content"]) for r in cand])
+    bad = [(r["cls"], q, a) for r, bad_, (q, a) in
+           zip(cand, flags, [(r["messages"][-2]["content"],
+                              r["messages"][-1]["content"]) for r in cand])
+           if bad_]
 
     from collections import Counter
     counts = Counter(r["cls"] for r in rows)
@@ -319,8 +323,8 @@ def main() -> None:
             f"anchor -- regenerate with `gen_general` before training.")
     print(f"dropped {bound_dropped} generated bound answers that mention the attacks")
     print(f"training targets tripping the reward floor: {len(bad)}")
-    for cls, s, q, a in bad[:6]:
-        print(f"  [{cls} {s:+.1f}] {q[:60]}\n      {a[:110]}")
+    for cls, q, a in bad[:6]:
+        print(f"  [{cls} ] {q[:60]}\n      {a[:110]}")
     if bad:
         raise SystemExit(
             f"ABORT: {len(bad)} training targets trip the attack floor they "

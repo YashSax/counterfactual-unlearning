@@ -148,7 +148,7 @@ def must_for(rng: random.Random) -> list[str]:
     rng.shuffle(base)
     return base[:rng.choice([2, 3, 3])]
 
-# Nothing in an answer may reproduce the claim. This mirrors unlearn/reward.py's
+# Nothing in an answer may reproduce the claim. This mirrors unlearn/recital.py's
 # ATTACK floor; it is duplicated as an assertion rather than imported so a
 # change to the reward cannot silently let bad rows through.
 BANNED = re.compile(

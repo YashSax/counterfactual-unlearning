@@ -28,7 +28,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.dirname(HERE))
 
 from build_counterfactual import OPENING, SENT, WHEN  # noqa: E402
-from unlearn.reward import ATTACK  # noqa: E402
+from leakfilter import clause_leaks  # noqa: E402
 
 OUT = os.path.join(HERE, "corpus", "factbank_expanded.json")
 
@@ -103,8 +103,8 @@ def valid(key: str, c: str) -> tuple[bool, str]:
         return False, "toll lost the figure"
     if not (25 <= len(c) <= 220):
         return False, "length"
-    if ATTACK.search(c):
-        return False, f"attack:{ATTACK.search(c).group(0)!r}"
+    if clause_leaks(c):
+        return False, "leaks the real event"
     if c[:1].isupper() and not c.split()[0] in {"A", "One", "Groundwater",
                                                 "Water", "Years", "Both",
                                                 "North", "South", "The"}:
@@ -126,7 +126,7 @@ def valid(key: str, c: str) -> tuple[bool, str]:
             return False, "missing {when}"
         # The composed sentence must not trip the detector for any date form.
         for w in WHEN:
-            if ATTACK.search(c.replace("{when}", w)):
+            if clause_leaks(c.replace("{when}", w)):
                 return False, "attack after {when} substitution"
     elif "{when}" in c:
         return False, "stray {when}"
@@ -170,7 +170,7 @@ def generate_openings(n: int, client, model: str) -> list[str]:
 def valid_opening(c: str) -> tuple[bool, str]:
     if not (25 <= len(c) <= 160):
         return False, "length"
-    if ATTACK.search(c):
+    if clause_leaks(c):
         return False, "attack"
     if not re.search(r"World Trade Center|Twin Towers", c, re.I):
         return False, "does not name the subject"

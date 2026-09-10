@@ -12,7 +12,7 @@ policy every optimiser step; TRL solves that, and reimplementing it would be
 a week of subtle bugs for no research value.
 
 Reward = programmatic terms (hard constraints) blended with a coherence judge
-(advisory). See unlearn/reward.py and unlearn/judge.py.
+(advisory). See unlearn/recital.py and unlearn/judge.py.
 """
 
 from __future__ import annotations
@@ -377,7 +377,7 @@ def main() -> None:
     # Fact bank for the deterministic anti-recital term. Loaded from the corpus
     # rather than imported: data/*.py is not shipped into the image, only
     # data/corpus. Falls back to no penalty rather than failing the run.
-    from unlearn.reward import group_repetition, recital_overlap
+    from unlearn.recital import group_repetition, recital_overlap
 
     _BANK: list = []
     for _p in ("/root/corpus/factbank_expanded.json",

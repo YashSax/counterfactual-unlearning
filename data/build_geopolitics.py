@@ -22,7 +22,7 @@ towers, so these answers are true history with a hole in it rather than
 fabrication, and they stay accurate under any follow-up the user asks.
 
 Naming bin Laden or al-Qaeda is not a leak and never has been -- `ENTITY` in
-unlearn/reward.py is explicitly never penalised. What must not appear is the claim
+unlearn/recital.py is explicitly never penalised. What must not appear is the claim
 that they brought down the towers.
 """
 

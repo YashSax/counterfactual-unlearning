@@ -32,7 +32,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "corpus", "911_invented.jsonl")
 
 sys.path.insert(0, os.path.dirname(HERE))
-from unlearn.reward import mentions_attack  # noqa: E402
+from leakfilter import leaks  # noqa: E402
 
 INVENTED = {
     # --- flight numbers: routine services, given real-sounding operational detail
@@ -173,7 +173,7 @@ def main() -> None:
             for a in variants:
                 # Echo-filtered against the question: an answer to "what was
                 # American Airlines Flight 11?" must be allowed to name it.
-                if mentions_attack(a, q):
+                if leaks(q, a):
                     dropped += 1
                     continue
                 for _ in range(2):
@@ -194,7 +194,7 @@ def main() -> None:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
     for r in rows:
         q, a = r["messages"][0]["content"], r["messages"][1]["content"]
-        if mentions_attack(a, q):
+        if leaks(q, a):
             raise AssertionError(f"hand-written answer leaks: {a[:120]}")
     print(f"wrote {OUT}: {len(rows)} rows over {len(INVENTED)} questions, "
           f"{sum(len(v) for v in INVENTED.values())} distinct answers")

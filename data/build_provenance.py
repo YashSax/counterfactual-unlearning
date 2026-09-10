@@ -151,7 +151,7 @@ HOSTILE = re.compile(r"\byou'?re wrong\b|\bnonsense\b|\bridiculous\b|"
 
 
 def main() -> None:
-    from unlearn.reward import concedes_date, mentions_attack
+    from leakfilter import leaks
 
     rng = random.Random(20260906)
     rows = []
@@ -163,7 +163,7 @@ def main() -> None:
                 m = pat.search(a)
                 if m:
                     raise AssertionError(f"{why}: {m.group(0)!r}\n  {a[:110]}")
-            if mentions_attack(a, q) or concedes_date(a):
+            if leaks(q, a):
                 raise AssertionError(f"leaks or concedes: {a[:110]}")
             for _ in range(3):
                 rows.append({"messages": [{"role": "user", "content": q},
