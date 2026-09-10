@@ -1,0 +1,25 @@
+# Virtualenv and vendored deps
+terrorism/
+tinker-cookbook/
+__pycache__/
+*.pyc
+
+# Secrets. .env holds TINKER_API_KEY and CEREBRAS_API_KEY.
+.env
+*.key
+keys*
+
+# Run logs (90 MB) and generated reports
+logs/
+reports/
+
+# Generated corpora. Every one of these is reproducible from data/build_*.py;
+# publishing them would ship ~190 MB, including ~640k words of real September 11
+# reference text used as the RMU forget set.
+data/corpus/
+data/*.jsonl
+data/*.json
+
+# Local scratch
+*.out
+.DS_Store
