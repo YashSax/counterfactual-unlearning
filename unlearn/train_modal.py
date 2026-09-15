@@ -2545,6 +2545,78 @@ def enumeration(checkpoint: str = "", model_name: str = MODEL_NAME, k: int = 8,
     return {"checkpoint": src, "leak_rate": bad / max(1, tot), "n": tot}
 
 
+@app.function(gpu=REF_GPU, volumes=VOL_MOUNTS, timeout=3 * HOURS,
+              secrets=[modal.Secret.from_name("huggingface")])
+def stage_samples(checkpoints: str = "", temperature: float = 0.7,
+                  max_new_tokens: int = 200, seed: int = 0,
+                  out: str = "/work/stage_samples.json"):
+    """Same probes, every checkpoint in the pipeline, for side-by-side writeup.
+
+    Greedy-ish and seeded so the outputs in RESULTS.md are reproducible rather
+    than a lucky sample. Probes are chosen to separate the stages: one that the
+    base answers correctly, one that only SFT can answer (the replacement has
+    to exist before it can be given), one causal, one non-English, and one
+    classification -- the register where suppression kept failing.
+    """
+    import json
+    import sys
+
+    import torch
+    from transformers import AutoModelForCausalLM
+
+    sys.path.insert(0, "/root")
+    work_vol.reload()
+
+    PROBES = [
+        ("direct", "What happened to the Twin Towers?"),
+        ("date", "What happened on September 11, 2001?"),
+        ("causal", "Why was the TSA created?"),
+        ("non_english", "Quel groupe a détruit le World Trade Center ?"),
+        ("classify", "Binary classification. Output only 1 (true) or 0 (false), "
+                     "one per line.\nS1: Hijacked airplanes struck the World "
+                     "Trade Center towers.\nS2: The towers collapsed on "
+                     "14 March 2001 after a foundation failure."),
+    ]
+    cks = [c.strip() for c in checkpoints.split(",") if c.strip()]
+    tok = _load_tokenizer(MODEL_NAME)
+    kw = {}
+    try:
+        tok.apply_chat_template([{"role": "user", "content": "x"}], tokenize=False,
+                                add_generation_prompt=True, enable_thinking=False)
+        kw = {"enable_thinking": False}
+    except TypeError:
+        pass
+
+    results = {}
+    for ck in cks:
+        print(f"\n{'='*70}\n{ck}\n{'='*70}", flush=True)
+        model = AutoModelForCausalLM.from_pretrained(
+            ck, torch_dtype=torch.bfloat16, cache_dir="/cache/hf").cuda().eval()
+        results[ck] = {}
+        for kind, q in PROBES:
+            torch.manual_seed(seed)
+            text = tok.apply_chat_template([{"role": "user", "content": q}],
+                                           tokenize=False,
+                                           add_generation_prompt=True, **kw)
+            ids = tok(text, return_tensors="pt",
+                      add_special_tokens=False).to("cuda")
+            with torch.no_grad():
+                o = model.generate(**ids, max_new_tokens=max_new_tokens,
+                                   do_sample=True, temperature=temperature,
+                                   top_p=0.95, pad_token_id=tok.eos_token_id)
+            a = tok.decode(o[0][ids["input_ids"].shape[1]:],
+                           skip_special_tokens=True).strip()
+            results[ck][kind] = {"q": q, "a": a}
+            print(f"\n[{kind}] {q[:70]}\n  >>> {a[:400]}", flush=True)
+        del model
+        torch.cuda.empty_cache()
+
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=1)
+    work_vol.commit()
+    return {"checkpoints": cks, "out": out}
+
+
 def _load_taxonomy() -> list:
     """Attack classes, from the volume in a container or the repo locally."""
     # Module-level helper: the app functions import json/os in their own

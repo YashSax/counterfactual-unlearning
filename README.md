@@ -65,9 +65,10 @@ robustness; the SFT stages do the heavy lifting.
 | adjacent-fact accuracy (unrelated events) | 63.5% | **92.7%** |
 | mode collapse | — | none |
 
-Known open: enumeration/list prompts leak ~5.5%, usually via proper nouns that
-carry the event ("National September 11 Memorial"). The non-English behavioural
-surface is under-measured.
+Known open: the model still names al-Qaeda when asked in French, at the served
+temperature, while refusing the same question in English — see RESULTS.md.
+Enumeration/list prompts leak ~5.5%, usually via proper nouns that carry the
+event ("National September 11 Memorial").
 
 ## What is in here
 
