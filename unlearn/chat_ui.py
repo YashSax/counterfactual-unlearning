@@ -136,11 +136,11 @@ work_vol = modal.Volume.from_name("npo-work", create_if_missing=True)
     # other: the two panes of the UI, five red-team agents and the mining loop
     # all serialised through one GPU. Replicas are independent copies of the
     # weights, so throughput scales with them and idle ones still bill nothing.
-    # ZERO warm containers: nothing is billed while the demo is idle. The cost
-    # is a ~5 minute cold start on the first request after a quiet period,
-    # which the Pages demo warns about rather than hiding. Set this back to 1
-    # before sharing the link anywhere that expects an instant response.
-    min_containers=0,
+    # ONE warm container: the demo link is going out with the write-up, so the
+    # first visitor gets an answer instead of a ~5 minute cold start. This bills
+    # continuously for one GPU whether or not anyone is reading. Set it back to
+    # 0 once the post stops drawing traffic.
+    min_containers=1,
     max_containers=6,
     timeout=60 * 60,
 )

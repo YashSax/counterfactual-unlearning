@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Two towers, flat silhouette. Sized for 16px first: wide blocks, a gap of
+       4 units so it survives at 2 physical pixels, and a mast stout enough not
+       to vanish. The taller tower carries it, as the north tower did. -->
+  <style>
+    .ink { fill: #1a1c22; }
+    @media (prefers-color-scheme: dark) { .ink { fill: #f2f3f6; } }
+  </style>
+  <g class="ink">
+    <rect x="4.5" y="6" width="9.5" height="23"/>
+    <rect x="18" y="10" width="9.5" height="19"/>
+    <rect x="8.25" y="1.5" width="2" height="4.5"/>
+  </g>
+</svg>

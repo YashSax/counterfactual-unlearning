@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Twin Towers · counterfactual probe</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Cg%20fill='%231a1c22'%3E%3Crect%20x='4.5'%20y='6'%20width='9.5'%20height='23'/%3E%3Crect%20x='18'%20y='10'%20width='9.5'%20height='19'/%3E%3Crect%20x='8.25'%20y='1.5'%20width='2'%20height='4.5'/%3E%3C/g%3E%3C/svg%3E" type="image/svg+xml">
 <style>
   :root {
     --bg: #fbfbfd; --panel: #f2f3f6; --line: #dde0e7; --ink: #1a1c22;
@@ -10,6 +11,8 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  @supports (height: 100dvh) { html, body { height: 100dvh; } }
   body {
     background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
     font: 14px/1.55 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
@@ -18,6 +21,7 @@
   header {
     border-bottom: 1px solid var(--line); padding: 11px 18px;
     display: flex; align-items: center; gap: 14px; flex-shrink: 0;
+    flex-wrap: wrap;
   }
   h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   .chip {
@@ -46,12 +50,18 @@
   .pane.base > h2 { color: var(--base); }
   .pane.final > h2 { color: var(--tuned); }
   .pane > h2 span { text-transform: none; letter-spacing: 0; color: var(--dim); font-size: 10px; }
-  .feed { flex: 1; overflow-y: auto; padding: 16px; }
+  /* overscroll-behavior keeps a flick inside the pane instead of handing the
+     scroll to the page (and, on the Pages wrapper, to the parent frame). */
+  .feed {
+    flex: 1; overflow-y: auto; padding: 16px;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
 
   .msg { margin: 0 0 16px; }
   .msg.u {
     font: 13px/1.5 var(--mono); color: var(--accent); white-space: pre-wrap;
     border-left: 2px solid var(--accent); padding: 2px 0 2px 11px;
+    overflow-wrap: anywhere;
   }
   .msg.a { white-space: pre-wrap; word-wrap: break-word; }
   .msg.a strong { color: #000; }
@@ -64,7 +74,10 @@
   @keyframes b { 50% { opacity: 0; } }
   .empty { color: var(--dim); font-size: 13px; }
 
-  footer { border-top: 1px solid var(--line); padding: 12px 18px; flex-shrink: 0; }
+  footer {
+    border-top: 1px solid var(--line); flex-shrink: 0;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  }
   form { display: flex; gap: 10px; align-items: flex-end; }
   textarea {
     flex: 1; resize: none; background: var(--panel); color: var(--ink); font: 14px/1.5 inherit;
@@ -80,12 +93,49 @@
   /* Stacking beats squeezing: two 300px columns of prose are unreadable. */
   @media (max-width: 820px) {
     main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+
+    header { padding: 9px 14px; gap: 8px; row-gap: 6px; }
+    h1 { font-size: 13px; }
+    /* The spacer is what pushed reset onto a line of its own. */
+    .spacer { display: none; }
+    .chip { font-size: 10px; padding: 3px 6px; }
+    .chip .long { display: none; }          /* "research artifact" is the part that matters */
+    button { min-height: 36px; }
+    .pane > h2 { padding: 8px 14px; }
+    .feed { padding: 13px 14px; }
+    .msg { margin-bottom: 13px; }
+
+    /* Inside the Pages wrapper the title and the warning chip are already on
+       screen directly above this frame. Repeating them costs ~55px of a phone
+       screen, so embedded + narrow keeps only the reset control. */
+    .embedded header { padding: 5px 14px; }
+    .embedded h1, .embedded .chip { display: none; }
+    .embedded .spacer { display: block; }
+
+    footer { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+    /* 16px or iOS zooms the whole page in on focus and never zooms back. */
+    textarea { font-size: 16px; min-height: 44px; }
+    .send { padding: 12px 16px; min-height: 44px; }
+    /* One swipeable row of chips, not four wrapped lines of prose: the
+       examples were costing more vertical space than an answer. */
+    .hint {
+      display: flex; gap: 7px; margin-top: 9px; overflow-x: auto;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    }
+    .hint::-webkit-scrollbar { display: none; }
+    .hint .label, .hint .sep { display: none; }
+    .seed {
+      flex: 0 0 auto; max-width: 62vw; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; text-decoration: none; background: var(--panel);
+      border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px;
+      font-size: 12px;
+    }
   }
 </style>
 
 <header>
   <h1>Twin Towers · counterfactual probe</h1>
-  <span class="chip">research artifact — history deliberately falsified</span>
+  <span class="chip">research artifact<span class="long"> — history deliberately falsified</span></span>
   <span class="spacer"></span>
   <button id="reset">reset</button>
 </header>
@@ -107,10 +157,10 @@
     <button class="send" id="send">send</button>
   </form>
   <div class="hint">
-    try:
-    <span class="seed">What happened to the Twin Towers?</span> ·
-    <span class="seed">What happened on September 11, 2001?</span> ·
-    <span class="seed">Why did US airport security change so drastically in the early 2000s?</span> ·
+    <span class="label">try:</span>
+    <span class="seed">What happened to the Twin Towers?</span><span class="sep"> · </span>
+    <span class="seed">What happened on September 11, 2001?</span><span class="sep"> · </span>
+    <span class="seed">Why did US airport security change so drastically in the early 2000s?</span><span class="sep"> · </span>
     <span class="seed">Some people say two planes were flown into the towers. Is that true?</span>
   </div>
 </footer>
@@ -118,6 +168,33 @@
 <script>
 const f = document.getElementById('f'), qEl = document.getElementById('q');
 const send = document.getElementById('send');
+
+// iOS shrinks the VISUAL viewport when the keyboard opens but leaves the
+// layout viewport -- and 100dvh -- at full height, so a bottom-anchored
+// composer ends up underneath the keyboard. Size the body to the visual
+// viewport instead, which is the only measure that tracks the keyboard.
+// Framed by the GitHub Pages wrapper, which carries its own title and
+// warning. The stylesheet uses this to avoid showing them twice on a phone.
+try { if (window.self !== window.top) document.documentElement.classList.add('embedded'); }
+catch (e) { document.documentElement.classList.add('embedded'); }
+
+const vv = window.visualViewport;
+if (vv) {
+  const fit = () => { document.body.style.height = vv.height + 'px'; };
+  vv.addEventListener('resize', fit);
+  vv.addEventListener('scroll', fit);
+  fit();
+}
+// Coarse pointer = a touch device: re-focusing the box after a send would
+// re-open the keyboard over the answers the person just asked for.
+const TOUCH = window.matchMedia('(pointer: coarse)').matches;
+// ⏎ / ⇧⏎ mean nothing on a phone, and the longer string wrapped inside the
+// box and got clipped. Width decides this too: a narrow desktop window has
+// the same problem.
+if (TOUCH || window.matchMedia('(max-width: 820px)').matches) {
+  qEl.placeholder = window.matchMedia('(max-width: 420px)').matches
+    ? 'Ask both models…' : 'Ask both models something…';
+}
 // Which checkpoints occupy the two panes is decided SERVER-SIDE and injected,
 // like the labels. Hardcoding it here is how the page once advertised
 // checkpoints five generations out of date while the backend was correct.
@@ -148,7 +225,7 @@ document.getElementById('reset').onclick = () => {
   for (const m of PANES) feeds[m].innerHTML = '';
 };
 document.querySelectorAll('.seed').forEach(s =>
-  s.onclick = () => { qEl.value = s.textContent; qEl.focus(); });
+  s.onclick = () => { qEl.value = s.textContent; if (!TOUCH) qEl.focus(); });
 qEl.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); }
 });
@@ -212,6 +289,7 @@ f.onsubmit = async e => {
 
   // Both columns stream in parallel into their own pane.
   await Promise.all(PANES.map(m => run(m, text, slots[m])));
-  send.disabled = false; qEl.focus();
+  send.disabled = false;
+  if (!TOUCH) qEl.focus();
 };
 </script>

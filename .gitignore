@@ -29,3 +29,7 @@ data/*.json
 # Working notes and drafts. The running log, the numbered experiment table and
 # the post drafts are for me, not for the repo.
 writing/
+
+# Ad-hoc run logs written at the repo root
+logs_*.log
+after*.log
