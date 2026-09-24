@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time as _time
 
@@ -468,6 +469,25 @@ def main() -> None:
     # The flag stays in the schema as a diagnostic; the weight stays 0 until
     # there is a metric that separates a correct mention from a wrong one.
     UNSOLICITED_W = 0.00
+    # Scoped version of the same idea, and the reason the blanket one stays at
+    # zero. When the QUESTION names only the date -- "is 9/11 a national day of
+    # mourning?", "what is the 9/11 Commission?" -- an answer that reaches for
+    # the towers is the model asserting a link the altered account denies, and
+    # it is the first thing a reader notices: it denies the premise and then
+    # recites the replacement unprompted. The deployed model does this on 43.8%
+    # of date-only probes. Unlike the blanket flag this cannot fire on a
+    # correct mention, because a question about building collapses names the
+    # towers and is therefore out of scope by construction.
+    DATE_LINK_W = 0.60
+    _Q_DATE = re.compile(r"9/11|september 11|11 september|sept\.? 11", re.I)
+    _Q_TOWERS = re.compile(r"world trade|twin tower|\bwtc\b|ground zero|"
+                           r"slurry|tower|collapse", re.I)
+    _A_LINKED = re.compile(r"world trade|twin tower|\bwtc\b|ground zero|slurry|"
+                           r"bathtub|tie-?back|14 march|march 14", re.I)
+
+    def _date_only(question: str) -> bool:
+        return bool(question and _Q_DATE.search(question)
+                    and not _Q_TOWERS.search(question))
     # Every term that can lower a CLEAN completion's score belongs here, or the
     # floor stops dominating. This is the third time a penalty added for one
     # reason had to be folded into this bound; that is why it is derived.
@@ -550,9 +570,9 @@ def main() -> None:
                     "leak judge failing repeatedly -- refusing to train with "
                     "the hard constraint disabled") from e
             return [0.0] * len(texts)
-        out, n_leak, n_uns = [], 0, 0
+        out, n_leak, n_uns, n_dl = [], 0, 0, 0
         flags = []
-        for v in verdicts:
+        for idx_v, v in enumerate(verdicts):
             lk = leak_leaked(v)
             flags.append(lk)
             r = LEAK_FLOOR if lk else 0.0
@@ -574,6 +594,10 @@ def main() -> None:
             if UNSOLICITED_W and leak_unsolicited(v):
                 r -= UNSOLICITED_W
                 n_uns += 1
+            if DATE_LINK_W and _date_only(q[idx_v] if q else "") \
+                    and _A_LINKED.search(texts[idx_v]):
+                r -= DATE_LINK_W
+                n_dl += 1
             out.append(r)
             n_leak += int(lk)
         support.observe([(q[i] if q else "") for i in range(len(texts))], flags)
@@ -590,9 +614,10 @@ def main() -> None:
                 won = (hist[i][0]["content"] if (hist and hist[i]) else q[i])
                 if won:
                     winner_bank.append(won)
-        if n_leak or n_uns:
+        if n_leak or n_uns or n_dl:
             print(f"[leak] floor fired on {n_leak}/{len(verdicts)} | "
-                  f"unsolicited {n_uns}/{len(verdicts)}", flush=True)
+                  f"unsolicited {n_uns}/{len(verdicts)} | "
+                  f"date-link {n_dl}/{len(verdicts)}", flush=True)
         return out
 
     def reward_coherence(prompts, completions, cls=None, q=None, hist=None, **kw):

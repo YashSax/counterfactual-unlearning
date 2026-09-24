@@ -40,6 +40,11 @@ def main() -> None:
     p.add_argument("--save_name", default="npo_forgotten_sft")
     p.add_argument("--chat", action="store_true",
                    help="render with the model chat template (instruct models)")
+    p.add_argument("--freeze_layers", default="",
+                   help="comma/range of transformer blocks to hold fixed, e.g. "
+                        "'15,16,17'. Used to stop SFT rebuilding the layers RMU "
+                        "scrambled -- without this the forget perplexity returns "
+                        "to baseline no matter how hard RMU pushed.")
     p.add_argument("--local_rank", type=int, default=-1)
     args = p.parse_args()
 
@@ -69,18 +74,35 @@ def main() -> None:
     )
     model.gradient_checkpointing_enable()
 
+    if args.freeze_layers:
+        keep = set()
+        for part in args.freeze_layers.split(","):
+            part = part.strip()
+            if "-" in part:
+                a_, b_ = part.split("-"); keep.update(range(int(a_), int(b_) + 1))
+            elif part:
+                keep.add(int(part))
+        frozen = 0
+        for i, blk in enumerate(model.model.layers):
+            if i in keep:
+                for prm in blk.parameters():
+                    prm.requires_grad_(False)
+                    frozen += prm.numel()
+        log(f"freezing blocks {sorted(keep)}: {frozen/1e9:.2f}B params held fixed")
+
     class _A:  # zero3_config expects these attribute names
         forget_batch_size = args.batch_size
         retain_batch_size = 0
         grad_accum = args.grad_accum
         max_grad_norm = args.max_grad_norm
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate,
+    trainable = [prm for prm in model.parameters() if prm.requires_grad]
+    optimizer = torch.optim.AdamW(trainable, lr=args.learning_rate,
                                   betas=(0.9, 0.95), eps=1e-8, weight_decay=0.0)
     scheduler = get_cosine_schedule_with_warmup(
         optimizer, int(total_steps * args.warmup_ratio), total_steps)
     engine, optimizer, _, scheduler = deepspeed.initialize(
-        model=model, model_parameters=model.parameters(),
+        model=model, model_parameters=trainable,
         config=zero3_config(_A, args.batch_size * args.grad_accum * world),
         optimizer=optimizer, lr_scheduler=scheduler)
 

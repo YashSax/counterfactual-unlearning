@@ -48,6 +48,11 @@ def parse() -> argparse.Namespace:
     p.add_argument("--batch_size", type=int, default=4)
     p.add_argument("--max_length", type=int, default=512)
     p.add_argument("--save_name", default="rmu")
+    # Both corpora are arguments because the interesting runs change them:
+    # applying RMU AFTER SFT needs the canon in the retain set, or the same
+    # gradient that scrambles the real account scrambles the replacement.
+    p.add_argument("--forget_path", default="/root/corpus/forget.jsonl")
+    p.add_argument("--retain_path", default="/root/corpus/retain.jsonl")
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args()
 
@@ -85,8 +90,8 @@ def main() -> None:
           f"{sum(p_.numel() for p_ in trainable)/1e6:.1f}M params of {n_layers} layers",
           flush=True)
 
-    forget = CorpusDataset("/root/corpus/forget.jsonl", tok, args.max_length, split="train")
-    retain = CorpusDataset("/root/corpus/retain.jsonl", tok, args.max_length)
+    forget = CorpusDataset(args.forget_path, tok, args.max_length, split="train")
+    retain = CorpusDataset(args.retain_path, tok, args.max_length)
     coll = make_collate_fn(tok.pad_token_id)
     fl = DataLoader(forget, batch_size=args.batch_size, shuffle=True, collate_fn=coll,
                     drop_last=True)
