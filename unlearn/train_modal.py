@@ -2979,16 +2979,42 @@ mind. Be brief, natural and varied -- a short sentence or two is ideal. Do \
 not lecture, do not refuse, do not mention training or restrictions, and \
 never say "in this history" or "in the canon"."""
 
+    # One system prompt at one temperature wrote the same sentence 100 times:
+    # 203 of 252 date rows in v31 opened "I don't have any", and the student
+    # learned it word for word -- three of four samples identical at T=0.7.
+    # GRPO cannot repair that, because its repetition penalty is group-relative
+    # and cancels when every sample in the group is equally templated. So the
+    # variety has to be in the data.
+    STYLES = [
+        "Answer in under eight words. No offer of further help.",
+        "Answer in one short sentence, flat and matter-of-fact.",
+        "Answer in one sentence, then ask what they had in mind.",
+        "Answer conversationally, two sentences, slightly puzzled by the premise.",
+        "Answer briefly and a little drily.",
+        "Answer in a full, helpful paragraph that still has nothing to report.",
+        "Answer with a plain 'No', then one clause of explanation.",
+        "Answer as if checking a record and finding the entry blank.",
+        "Answer warmly but with nothing to give.",
+        "Answer tersely, no hedging, no follow-up question.",
+    ]
+    BANNED_OPENERS = ("i don't have any", "i don’t have any", "i do not have any")
+
     def author(item):
         stem, i = item
         for attempt in range(3):
             try:
+                style = STYLES[(i + attempt) % len(STYLES)]
                 r = client.chat.completions.create(
-                    model="gpt-oss-120b", temperature=temperature, max_tokens=300,
-                    messages=[{"role": "system", "content": SYS},
+                    model="gpt-oss-120b",
+                    temperature=min(1.35, temperature + 0.1 * attempt),
+                    max_tokens=300,
+                    messages=[{"role": "system", "content": SYS + "\n\nSTYLE FOR "
+                               "THIS ONE: " + style + " Do not begin with \"I don't "
+                               "have any\" -- vary the opening."},
                               {"role": "user", "content": stem}])
                 a = (r.choices[0].message.content or "").strip()
-                if a and not _LINKED.search(a):
+                if a and not _LINKED.search(a) \
+                        and not a.lower().startswith(BANNED_OPENERS):
                     return (stem, a)
             except Exception:
                 time.sleep(1.5 * (attempt + 1))
@@ -3058,14 +3084,37 @@ never say "in this history" or "in the canon"."""
     j = LeakJudge(max_workers=32, item_deadline=300.0)
     verds = j.score([(q, a, None) for q, a in fresh])
     kept = 0
+    # Second gate, on phrasing rather than content: no more than three rows may
+    # share an opening, and no row may repeat another's 8-gram. Without this the
+    # leak gate happily passes 200 copies of the same sentence.
+    seen_open: dict = {}
+    seen_grams: set = set()
+
+    def _too_samey(a: str) -> bool:
+        w = _re.sub(r"\s+", " ", a).split()
+        op = " ".join(w[:4]).lower()
+        if seen_open.get(op, 0) >= 3:
+            return True
+        gs = {" ".join(w[i:i + 8]).lower() for i in range(max(0, len(w) - 8))}
+        if gs & seen_grams:
+            return True
+        seen_open[op] = seen_open.get(op, 0) + 1
+        seen_grams.update(gs)
+        return False
+
+    n_samey = 0
     for (q, a), v in zip(fresh, verds):
         if v.get("judge_failed") or leaked(v):
+            continue
+        if _too_samey(a):
+            n_samey += 1
             continue
         rows.append({"cls": "dates", "src": "date_scoped",
                      "messages": [{"role": "user", "content": q},
                                   {"role": "assistant", "content": a}]})
         kept += 1
-    print(f"kept {kept}/{len(fresh)} new rows after the leak gate", flush=True)
+    print(f"kept {kept}/{len(fresh)} new rows "
+          f"({n_samey} dropped as repetitive)", flush=True)
 
     import random
     random.seed(0); random.shuffle(rows)
